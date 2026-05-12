@@ -44,3 +44,8 @@ app = FastAPI(lifespan=lifespan)
 @app.get("/health")
 def health():
     return {"status": "ok"}
+    
+@app.post("/trigger/test")
+async def trigger_test():
+    await test_publish()
+    return {"status": "test published"}
