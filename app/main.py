@@ -26,8 +26,8 @@ async def process_temp_attendance_data():
 
 # async def test_publish():
 #     await publish_message("test_queue", {"test": "hello", "timestamp": str(datetime.now())})
-async def test_publish():
-    await publish_message("test_queue", {"test": "hello", "timestamp": str(datetime.now())})
+# async def test_publish():
+#     await publish_message("test_queue", {"test": "hello", "timestamp": str(datetime.now())})
 
 
 # ---------- Scheduler lifecycle ----------
@@ -36,7 +36,7 @@ scheduler = AsyncIOScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Add cron jobs – same intervals you need
-    scheduler.add_job(process_temp_attendance_data, 'cron', hour='*/1')
+    scheduler.add_job(process_temp_attendance_data, 'cron', second='*/20')
     # scheduler.add_job(check_inactive_employees, 'cron', hour=2, minute=0)
     # scheduler.add_job(generate_report, 'cron', minute='*/30')
     # scheduler.add_job(cleanup_logs, 'cron', day_of_week='sun', hour=3, minute=0)

@@ -1,6 +1,7 @@
 import aio_pika
 import os
 import json
+from datetime import datetime
 
 # Environment variables from docker-compose
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
@@ -34,4 +35,4 @@ async def publish_message(routing_key: str, payload: dict):
         )
 
         await channel.default_exchange.publish(message, routing_key=routing_key, mandatory=True)
-        print(f"Published to '{routing_key}': {payload}")
+        print(f"Published to '{routing_key}': {payload} - executed at {datetime.now()}")
