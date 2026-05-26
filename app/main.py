@@ -4,9 +4,14 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime
 
 from app.rabbitmq_pub import publish_message
+from datetime import datetime, timedelta
+
+is_yesterday_processed = False
 
 # ---------- Job functions ----------
 async def process_temp_attendance_data():
+    global is_yesterday_processed
+
     now_date = datetime.now().strftime("%Y-%m-%d")
     await publish_message(
         "processTempData_trigger_queue",
@@ -15,6 +20,18 @@ async def process_temp_attendance_data():
             "end_date": now_date,
         },
     )
+    if is_yesterday_processed == False or now_date != is_yesterday_processed:
+
+        yesterday = datetime.now() - timedelta(days=1)
+        yesterday_date = yesterday.strftime("%Y-%m-%d")
+        await publish_message(
+            "processTempData_trigger_queue",
+            {
+                "start_date": yesterday_date,
+                "end_date": yesterday_date,
+            },
+        )
+        is_yesterday_processed = now_date
 
 
 # async def generate_report():
@@ -36,7 +53,7 @@ scheduler = AsyncIOScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Add cron jobs – same intervals you need
-    scheduler.add_job(process_temp_attendance_data, 'cron', second='*/20')
+    scheduler.add_job(process_temp_attendance_data, 'cron', minute='*/30')
     # scheduler.add_job(check_inactive_employees, 'cron', hour=2, minute=0)
     # scheduler.add_job(generate_report, 'cron', minute='*/30')
     # scheduler.add_job(cleanup_logs, 'cron', day_of_week='sun', hour=3, minute=0)
