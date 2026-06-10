@@ -43,6 +43,16 @@ async def employee_deactivation():
             "date": now_date
         },
     )
+    
+# --------------- Insert Weekend Holidays ---------------
+async def insert_weekend_holidays():
+    year = datetime.now().strftime("%Y")
+    await publish_message(
+        "insertWeekendHolidays_trigger_queue",
+        {
+            "year": year,
+        },
+    )
 
 
 # async def generate_report():
@@ -66,6 +76,8 @@ async def lifespan(app: FastAPI):
     # Add cron jobs – same intervals you need
     scheduler.add_job(process_temp_attendance_data, 'cron', hour='*/1')
     scheduler.add_job(employee_deactivation, 'cron', hour='0', minute='0')
+    scheduler.add_job(insert_weekend_holidays, 'cron', month='1', day='1', hour='0', minute='0', second='0')
+    #scheduler.add_job(employee_deactivation, 'cron', second='*/10')
     # scheduler.add_job(check_inactive_employees, 'cron', hour=2, minute=0)
     # scheduler.add_job(generate_report, 'cron', minute='*/30')
     # scheduler.add_job(cleanup_logs, 'cron', day_of_week='sun', hour=3, minute=0)
