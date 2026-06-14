@@ -54,6 +54,16 @@ async def insert_weekend_holidays():
         },
     )
 
+# --------------- Confirm Provisional Employees ---------------
+async def confirm_provisional_employees():
+    await publish_message(
+        "confirmProvisionalEmployees_trigger_queue",
+        {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+        },
+    )
+
+
 
 # async def generate_report():
 #     await publish_message("reports_queue", {"task": "generate_report"})
@@ -74,10 +84,22 @@ scheduler = AsyncIOScheduler()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Add cron jobs – same intervals you need
-    scheduler.add_job(process_temp_attendance_data, 'cron', hour='*/1')
-    scheduler.add_job(employee_deactivation, 'cron', hour='0', minute='0')
-    scheduler.add_job(insert_weekend_holidays, 'cron', month='1', day='1', hour='0', minute='0', second='0')
-    #scheduler.add_job(employee_deactivation, 'cron', second='*/10')
+    scheduler.add_job(
+        process_temp_attendance_data, 
+        'cron', hour='*/1', misfire_grace_time=30, id='processTempData_job', max_instances=1
+    )
+    scheduler.add_job(
+        employee_deactivation, 
+        'cron', hour='0', minute='0', misfire_grace_time=30, id='employeeDeactivation_job', max_instances=1
+    )
+    scheduler.add_job(
+        insert_weekend_holidays, 
+        'cron', month='1', day='1', hour='0', minute='0', second='0', misfire_grace_time=30, id='insertWeekendHolidays_job', max_instances=1
+    )
+    scheduler.add_job(
+        confirm_provisional_employees,
+        'cron', minute='*/1', misfire_grace_time=30, coalesce=True, id='confirmProvisionalEmployees_job', max_instances=1
+    )
     # scheduler.add_job(check_inactive_employees, 'cron', hour=2, minute=0)
     # scheduler.add_job(generate_report, 'cron', minute='*/30')
     # scheduler.add_job(cleanup_logs, 'cron', day_of_week='sun', hour=3, minute=0)
