@@ -62,6 +62,16 @@ async def confirm_provisional_employees():
             "date": datetime.now().strftime("%Y-%m-%d"),
         },
     )
+    
+# --------------- Check Inactive Employees ---------------
+async def sync_roster_assignments():
+    await publish_message(
+        "syncRosterAssignments_trigger_queue",
+        {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+        },
+    )
+    
 
 
 
@@ -99,6 +109,10 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(
         confirm_provisional_employees,
         'cron', minute='*/1', misfire_grace_time=30, coalesce=True, id='confirmProvisionalEmployees_job', max_instances=1
+    )
+    scheduler.add_job(
+        sync_roster_assignments,
+        'cron', minute='*/5', misfire_grace_time=30, coalesce=True, id='syncRosterAssignments_job', max_instances=1
     )
     # scheduler.add_job(check_inactive_employees, 'cron', hour=2, minute=0)
     # scheduler.add_job(generate_report, 'cron', minute='*/30')
