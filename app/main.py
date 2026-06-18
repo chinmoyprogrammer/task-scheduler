@@ -62,6 +62,24 @@ async def confirm_provisional_employees():
             "date": datetime.now().strftime("%Y-%m-%d"),
         },
     )
+    
+# --------------- Check Inactive Employees ---------------
+async def sync_roster_assignments():
+    await publish_message(
+        "syncRosterAssignments_trigger_queue",
+        {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+        },
+    )
+    
+# --------------- Fiscal Year Closing ---------------
+async def fiscal_year_closing():
+    await publish_message(
+        "fiscalYearClosing_trigger_queue",
+        {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+        },
+    )
 
 
 
@@ -100,6 +118,15 @@ async def lifespan(app: FastAPI):
         confirm_provisional_employees,
         'cron', minute='*/1', misfire_grace_time=30, coalesce=True, id='confirmProvisionalEmployees_job', max_instances=1
     )
+    scheduler.add_job(
+        sync_roster_assignments,
+        'cron', minute='*/5', misfire_grace_time=30, coalesce=True, id='syncRosterAssignments_job', max_instances=1
+    )
+    scheduler.add_job(
+        fiscal_year_closing,
+        'cron', month='1', day='1', hour='0', minute='0', second='0', misfire_grace_time=30, id='fiscalYearClosing_job', max_instances=1
+    )
+    
     # scheduler.add_job(check_inactive_employees, 'cron', hour=2, minute=0)
     # scheduler.add_job(generate_report, 'cron', minute='*/30')
     # scheduler.add_job(cleanup_logs, 'cron', day_of_week='sun', hour=3, minute=0)
