@@ -2,9 +2,22 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime
+import os
+from dotenv import load_dotenv
 
 from app.rabbitmq_pub import publish_message
 from datetime import datetime, timedelta
+
+load_dotenv()
+
+def parse_cron_config(env_var: str, default: str) -> dict:
+    config_str = os.getenv(env_var, default)
+    config = {}
+    for pair in config_str.split(','):
+        if '=' in pair:
+            key, value = pair.strip().split('=', 1)
+            config[key.strip()] = value.strip()
+    return config
 
 is_yesterday_processed = False
 
@@ -104,27 +117,53 @@ async def lifespan(app: FastAPI):
     # Add cron jobs – same intervals you need
     scheduler.add_job(
         process_temp_attendance_data, 
-        'cron', hour='*/1', misfire_grace_time=30, id='processTempData_job', max_instances=1
+        'cron', 
+        **parse_cron_config('CRON_PROCESS_TEMP_ATTENDANCE', 'hour=*/1'),
+        misfire_grace_time=30, 
+        id='processTempData_job', 
+        max_instances=1
     )
     scheduler.add_job(
         employee_deactivation, 
-        'cron', hour='0', minute='0', misfire_grace_time=30, id='employeeDeactivation_job', max_instances=1
+        'cron', 
+        **parse_cron_config('CRON_EMPLOYEE_DEACTIVATION', 'hour=0,minute=0'),
+        misfire_grace_time=30, 
+        id='employeeDeactivation_job', 
+        max_instances=1
     )
     scheduler.add_job(
         insert_weekend_holidays, 
-        'cron', month='1', day='1', hour='0', minute='0', second='0', misfire_grace_time=30, id='insertWeekendHolidays_job', max_instances=1
+        'cron', 
+        **parse_cron_config('CRON_INSERT_WEEKEND_HOLIDAYS', 'month=1,day=1,hour=0,minute=0,second=0'),
+        misfire_grace_time=30, 
+        id='insertWeekendHolidays_job', 
+        max_instances=1
     )
     scheduler.add_job(
         confirm_provisional_employees,
-        'cron', minute='*/1', misfire_grace_time=30, coalesce=True, id='confirmProvisionalEmployees_job', max_instances=1
+        'cron', 
+        **parse_cron_config('CRON_CONFIRM_PROVISIONAL_EMPLOYEES', 'minute=*/1'),
+        misfire_grace_time=30, 
+        coalesce=True, 
+        id='confirmProvisionalEmployees_job', 
+        max_instances=1
     )
     scheduler.add_job(
         sync_roster_assignments,
-        'cron', minute='*/5', misfire_grace_time=30, coalesce=True, id='syncRosterAssignments_job', max_instances=1
+        'cron', 
+        **parse_cron_config('CRON_SYNC_ROSTER_ASSIGNMENTS', 'minute=*/5'),
+        misfire_grace_time=30, 
+        coalesce=True, 
+        id='syncRosterAssignments_job', 
+        max_instances=1
     )
     scheduler.add_job(
         fiscal_year_closing,
-        'cron', month='1', day='1', hour='0', minute='0', second='0', misfire_grace_time=30, id='fiscalYearClosing_job', max_instances=1
+        'cron', 
+        **parse_cron_config('CRON_FISCAL_YEAR_CLOSING', 'month=1,day=1,hour=0,minute=0,second=0'),
+        misfire_grace_time=30, 
+        id='fiscalYearClosing_job', 
+        max_instances=1
     )
     
     # scheduler.add_job(check_inactive_employees, 'cron', hour=2, minute=0)
