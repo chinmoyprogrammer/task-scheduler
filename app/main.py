@@ -95,6 +95,18 @@ async def fiscal_year_closing():
         },
     )
 
+# --------------- Absent Bridge Merge ---------------
+async def absent_bridge_merge():
+    year = datetime.now().strftime("%Y")
+    month = datetime.now().strftime("%m")
+    
+    await publish_message(
+        "processSandwichedHolidays_trigger_queue",
+        {
+            "year": year,
+            "month": month,
+        },
+    )
 
 
 # async def generate_report():
@@ -182,9 +194,15 @@ async def lifespan(app: FastAPI):
         id='fiscalYearClosing_job', 
         max_instances=1
     )
-
-     
-    
+    # --------------- Absent Bridge Merge ---------------
+    scheduler.add_job(
+        absent_bridge_merge,
+        'cron', 
+        **parse_cron_config('CRON_ABSENT_BRIDGE_MERGE', 'mmonth=*,day=1-5,hour=0,minute=0,second=0'),
+        misfire_grace_time=30, 
+        id='absentBridgeMerge_job', 
+        max_instances=1
+    )
     
     # scheduler.add_job(check_inactive_employees, 'cron', hour=2, minute=0)
     # scheduler.add_job(generate_report, 'cron', minute='*/30')
