@@ -6,6 +6,7 @@ import os
 from dotenv import load_dotenv
 
 from app.rabbitmq_pub import publish_message
+from app.redis_cache_checker import get_missing_cache_keys, REQUIRED_CACHE_KEYS
 from datetime import datetime, timedelta
 
 load_dotenv()
@@ -121,6 +122,22 @@ async def absent_bridge_merge():
 #     await publish_message("test_queue", {"test": "hello", "timestamp": str(datetime.now())})
 
 
+# ---------- Cache warmup (before scheduler) ----------
+async def ensure_cache_indexes():
+    print(f"[cache-warmup] Checking {len(REQUIRED_CACHE_KEYS)} required cache keys in Redis...")
+    missing = await get_missing_cache_keys()
+    if missing:
+        print(f"[cache-warmup] Missing {len(missing)} cache keys: {missing}")
+        print("[cache-warmup] Triggering full cache bg job via cacheRegenerate_queue")
+        await publish_message(
+            "cacheRegenerate_queue",
+            {"type": []},
+        )
+    else:
+        print("[cache-warmup] All cache keys present; skipping cache bg job.")
+    return missing
+
+
 # ---------- Scheduler lifecycle ----------
 scheduler = AsyncIOScheduler()
 
@@ -191,6 +208,8 @@ async def lifespan(app: FastAPI):
     # scheduler.add_job(generate_report, 'cron', minute='*/30')
     # scheduler.add_job(cleanup_logs, 'cron', day_of_week='sun', hour=3, minute=0)
     # scheduler.add_job(test_publish, 'interval', seconds=30, id='test_rabbitmq_job')
+
+    await ensure_cache_indexes()
 
     scheduler.start()
     print("✅ Scheduler started (including test job).")
