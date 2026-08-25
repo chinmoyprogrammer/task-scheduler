@@ -6,6 +6,7 @@ import os
 from dotenv import load_dotenv
 
 from app.rabbitmq_pub import publish_message
+from app.redis_cache_checker import get_missing_cache_keys, REQUIRED_CACHE_KEYS
 from datetime import datetime, timedelta
 
 load_dotenv()
@@ -94,6 +95,18 @@ async def fiscal_year_closing():
         },
     )
 
+# --------------- Absent Bridge Merge ---------------
+async def absent_bridge_merge():
+    year = datetime.now().strftime("%Y")
+    month = datetime.now().strftime("%m")
+    
+    await publish_message(
+        "processSandwichedHolidays_trigger_queue",
+        {
+            "year": year,
+            "month": month,
+        },
+    )
 
 
 # async def generate_report():
@@ -107,6 +120,22 @@ async def fiscal_year_closing():
 #     await publish_message("test_queue", {"test": "hello", "timestamp": str(datetime.now())})
 # async def test_publish():
 #     await publish_message("test_queue", {"test": "hello", "timestamp": str(datetime.now())})
+
+
+# ---------- Cache warmup (before scheduler) ----------
+async def ensure_cache_indexes():
+    print(f"[cache-warmup] Checking {len(REQUIRED_CACHE_KEYS)} required cache keys in Redis...")
+    missing = await get_missing_cache_keys()
+    if missing:
+        print(f"[cache-warmup] Missing {len(missing)} cache keys: {missing}")
+        print("[cache-warmup] Triggering full cache bg job via cacheRegenerate_queue")
+        await publish_message(
+            "cacheRegenerate_queue",
+            {"type": []},
+        )
+    else:
+        print("[cache-warmup] All cache keys present; skipping cache bg job.")
+    return missing
 
 
 # ---------- Scheduler lifecycle ----------
@@ -165,11 +194,22 @@ async def lifespan(app: FastAPI):
         id='fiscalYearClosing_job', 
         max_instances=1
     )
+    # --------------- Absent Bridge Merge ---------------
+    scheduler.add_job(
+        absent_bridge_merge,
+        'cron', 
+        **parse_cron_config('CRON_ABSENT_BRIDGE_MERGE', 'mmonth=*,day=1-5,hour=0,minute=0,second=0'),
+        misfire_grace_time=30, 
+        id='absentBridgeMerge_job', 
+        max_instances=1
+    )
     
     # scheduler.add_job(check_inactive_employees, 'cron', hour=2, minute=0)
     # scheduler.add_job(generate_report, 'cron', minute='*/30')
     # scheduler.add_job(cleanup_logs, 'cron', day_of_week='sun', hour=3, minute=0)
     # scheduler.add_job(test_publish, 'interval', seconds=30, id='test_rabbitmq_job')
+
+    await ensure_cache_indexes()
 
     scheduler.start()
     print("✅ Scheduler started (including test job).")
