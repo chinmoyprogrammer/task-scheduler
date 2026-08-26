@@ -198,7 +198,7 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(
         absent_bridge_merge,
         'cron', 
-        **parse_cron_config('CRON_ABSENT_BRIDGE_MERGE', 'mmonth=*,day=1-5,hour=0,minute=0,second=0'),
+        **parse_cron_config('CRON_ABSENT_BRIDGE_MERGE', 'month=*,day=1-5,hour=0,minute=0,second=0'),
         misfire_grace_time=30, 
         id='absentBridgeMerge_job', 
         max_instances=1
