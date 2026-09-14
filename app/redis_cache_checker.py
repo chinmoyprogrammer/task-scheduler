@@ -5,10 +5,16 @@ import redis.asyncio as redis
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-REDIS_DB = int(os.getenv("REDIS_DB", "0"))
+# Laravel's cache store lives in database.redis.cache (REDIS_CACHE_DB, default 1),
+# not the default connection (REDIS_DB, default 0). Mirror that so the check looks
+# where hr-admin-backend / hr-bg-service actually write.
+REDIS_DB = int(os.getenv("REDIS_CACHE_DB", os.getenv("REDIS_DB", "1")))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", None)
+# Full key = database.redis.options.prefix + cache.prefix + ':' + name
+# e.g. hr_admin_hr_cache:all_employee_short_desc
+REDIS_PREFIX = os.getenv("REDIS_PREFIX", "hr_admin_")
 CACHE_PREFIX = os.getenv("CACHE_PREFIX", "hr_cache")
-REDIS_KEY_PREFIX = f"{CACHE_PREFIX}:" if CACHE_PREFIX else ""
+REDIS_KEY_PREFIX = f"{REDIS_PREFIX}{CACHE_PREFIX}:" if CACHE_PREFIX else REDIS_PREFIX
 
 
 REQUIRED_CACHE_KEYS = [

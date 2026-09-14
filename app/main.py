@@ -128,9 +128,12 @@ async def ensure_cache_indexes():
     missing = await get_missing_cache_keys()
     if missing:
         print(f"[cache-warmup] Missing {len(missing)} cache keys: {missing}")
-        print("[cache-warmup] Triggering full cache bg job via cacheRegenerate_queue")
+        # *_trigger_queue is consumed by hr-bg-service rabbitmq:consume-triggers, which accepts
+        # this raw JSON and dispatches CacheRegenerateJob. cacheRegenerate_queue itself is a
+        # Laravel queue:work queue and rejects raw JSON (no job envelope).
+        print("[cache-warmup] Triggering full cache bg job via cacheRegenerate_trigger_queue")
         await publish_message(
-            "cacheRegenerate_queue",
+            "cacheRegenerate_trigger_queue",
             {"type": []},
         )
     else:
