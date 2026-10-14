@@ -106,16 +106,27 @@ async def fiscal_year_closing():
 
 # --------------- Absent Bridge Merge ---------------
 async def absent_bridge_merge():
-    year = datetime.now().strftime("%Y")
-    month = datetime.now().strftime("%m")
-    
-    await publish_message(
-        "processSandwichedHolidays_trigger_queue",
-        {
-            "year": year,
-            "month": month,
-        },
-    )
+    # Runs daily. Process the month of yesterday (last fully processed day);
+    # during the first 5 days also re-run the previous month so chains that
+    # end in the new month's first working days are resolved.
+    today = datetime.now()
+    yesterday = today - timedelta(days=1)
+    months = [(yesterday.year, yesterday.month)]
+
+    if today.day <= 5:
+        prev_month_last_day = today.replace(day=1) - timedelta(days=1)
+        prev = (prev_month_last_day.year, prev_month_last_day.month)
+        if prev not in months:
+            months.insert(0, prev)
+
+    for year, month in months:
+        await publish_message(
+            "processSandwichedHolidays_trigger_queue",
+            {
+                "year": f"{year}",
+                "month": f"{month:02d}",
+            },
+        )
 
 
 # async def generate_report():
@@ -210,7 +221,7 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(
         absent_bridge_merge,
         'cron', 
-        **parse_cron_config('CRON_ABSENT_BRIDGE_MERGE', 'month=*,day=1-5,hour=0,minute=0,second=0'),
+        **parse_cron_config('CRON_ABSENT_BRIDGE_MERGE', 'hour=2,minute=0,second=0'),
         misfire_grace_time=30, 
         id='absentBridgeMerge_job', 
         max_instances=1
