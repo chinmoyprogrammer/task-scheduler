@@ -104,6 +104,15 @@ async def fiscal_year_closing():
         },
     )
 
+# --------------- Activate PF Policy ---------------
+async def activate_pf_policy():
+    await publish_message(
+        "activatePfPolicy_trigger_queue",
+        {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+        },
+    )
+
 # --------------- Absent Bridge Merge ---------------
 async def absent_bridge_merge():
     # Runs daily. Process the month of yesterday (last fully processed day);
@@ -215,6 +224,14 @@ async def lifespan(app: FastAPI):
         **parse_cron_config('CRON_FISCAL_YEAR_CLOSING', 'month=1,day=1,hour=0,minute=0,second=0'),
         misfire_grace_time=30, 
         id='fiscalYearClosing_job', 
+        max_instances=1
+    )
+    scheduler.add_job(
+        activate_pf_policy,
+        'cron',
+        **parse_cron_config('CRON_ACTIVATE_PF_POLICY', 'hour=0,minute=0,second=0'),
+        misfire_grace_time=30,
+        id='activatePfPolicy_job',
         max_instances=1
     )
     # --------------- Absent Bridge Merge ---------------
