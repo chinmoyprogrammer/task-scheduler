@@ -58,6 +58,15 @@ async def employee_deactivation():
         },
     )
     
+# --------------- Legacy ERP sync (nightly repair of old ERP mirror) ---------------
+async def legacy_sync():
+    await publish_message(
+        "legacySync_trigger_queue",
+        {
+            "type": "all"
+        },
+    )
+
 # --------------- Insert Weekend Holidays ---------------
 async def insert_weekend_holidays():
     year = datetime.now().strftime("%Y")
@@ -207,6 +216,15 @@ async def lifespan(app: FastAPI):
         max_instances=1
     )
     
+    scheduler.add_job(
+        legacy_sync,
+        'cron',
+        **parse_cron_config('CRON_LEGACY_SYNC', 'hour=2,minute=0'),
+        misfire_grace_time=30,
+        id='legacySync_job',
+        max_instances=1
+    )
+
     # scheduler.add_job(check_inactive_employees, 'cron', hour=2, minute=0)
     # scheduler.add_job(generate_report, 'cron', minute='*/30')
     # scheduler.add_job(cleanup_logs, 'cron', day_of_week='sun', hour=3, minute=0)
