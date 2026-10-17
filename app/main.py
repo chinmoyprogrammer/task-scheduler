@@ -58,6 +58,15 @@ async def employee_deactivation():
         },
     )
     
+# --------------- Legacy ERP sync (nightly repair of old ERP mirror) ---------------
+async def legacy_sync():
+    await publish_message(
+        "legacySync_trigger_queue",
+        {
+            "type": "all"
+        },
+    )
+
 # --------------- Insert Weekend Holidays ---------------
 async def insert_weekend_holidays():
     year = datetime.now().strftime("%Y")
@@ -95,18 +104,38 @@ async def fiscal_year_closing():
         },
     )
 
-# --------------- Absent Bridge Merge ---------------
-async def absent_bridge_merge():
-    year = datetime.now().strftime("%Y")
-    month = datetime.now().strftime("%m")
-    
+# --------------- Activate PF Policy ---------------
+async def activate_pf_policy():
     await publish_message(
-        "processSandwichedHolidays_trigger_queue",
+        "activatePfPolicy_trigger_queue",
         {
-            "year": year,
-            "month": month,
+            "date": datetime.now().strftime("%Y-%m-%d"),
         },
     )
+
+# --------------- Absent Bridge Merge ---------------
+async def absent_bridge_merge():
+    # Runs daily. Process the month of yesterday (last fully processed day);
+    # during the first 5 days also re-run the previous month so chains that
+    # end in the new month's first working days are resolved.
+    today = datetime.now()
+    yesterday = today - timedelta(days=1)
+    months = [(yesterday.year, yesterday.month)]
+
+    if today.day <= 5:
+        prev_month_last_day = today.replace(day=1) - timedelta(days=1)
+        prev = (prev_month_last_day.year, prev_month_last_day.month)
+        if prev not in months:
+            months.insert(0, prev)
+
+    for year, month in months:
+        await publish_message(
+            "processSandwichedHolidays_trigger_queue",
+            {
+                "year": f"{year}",
+                "month": f"{month:02d}",
+            },
+        )
 
 
 # async def generate_report():
@@ -128,9 +157,12 @@ async def ensure_cache_indexes():
     missing = await get_missing_cache_keys()
     if missing:
         print(f"[cache-warmup] Missing {len(missing)} cache keys: {missing}")
-        print("[cache-warmup] Triggering full cache bg job via cacheRegenerate_queue")
+        # *_trigger_queue is consumed by hr-bg-service rabbitmq:consume-triggers, which accepts
+        # this raw JSON and dispatches CacheRegenerateJob. cacheRegenerate_queue itself is a
+        # Laravel queue:work queue and rejects raw JSON (no job envelope).
+        print("[cache-warmup] Triggering full cache bg job via cacheRegenerate_trigger_queue")
         await publish_message(
-            "cacheRegenerate_queue",
+            "cacheRegenerate_trigger_queue",
             {"type": []},
         )
     else:
@@ -194,16 +226,33 @@ async def lifespan(app: FastAPI):
         id='fiscalYearClosing_job', 
         max_instances=1
     )
+    scheduler.add_job(
+        activate_pf_policy,
+        'cron',
+        **parse_cron_config('CRON_ACTIVATE_PF_POLICY', 'hour=0,minute=0,second=0'),
+        misfire_grace_time=30,
+        id='activatePfPolicy_job',
+        max_instances=1
+    )
     # --------------- Absent Bridge Merge ---------------
     scheduler.add_job(
         absent_bridge_merge,
         'cron', 
-        **parse_cron_config('CRON_ABSENT_BRIDGE_MERGE', 'month=*,day=1-5,hour=0,minute=0,second=0'),
+        **parse_cron_config('CRON_ABSENT_BRIDGE_MERGE', 'hour=2,minute=0,second=0'),
         misfire_grace_time=30, 
         id='absentBridgeMerge_job', 
         max_instances=1
     )
     
+    scheduler.add_job(
+        legacy_sync,
+        'cron',
+        **parse_cron_config('CRON_LEGACY_SYNC', 'hour=2,minute=0'),
+        misfire_grace_time=30,
+        id='legacySync_job',
+        max_instances=1
+    )
+
     # scheduler.add_job(check_inactive_employees, 'cron', hour=2, minute=0)
     # scheduler.add_job(generate_report, 'cron', minute='*/30')
     # scheduler.add_job(cleanup_logs, 'cron', day_of_week='sun', hour=3, minute=0)
