@@ -58,6 +58,15 @@ async def employee_deactivation():
         },
     )
     
+# --------------- Legacy ERP sync (nightly repair of old ERP mirror) ---------------
+async def legacy_sync():
+    await publish_message(
+        "legacySync_trigger_queue",
+        {
+            "type": "all"
+        },
+    )
+
 # --------------- Insert Weekend Holidays ---------------
 async def insert_weekend_holidays():
     year = datetime.now().strftime("%Y")
@@ -95,8 +104,6 @@ async def fiscal_year_closing():
         },
     )
 
-<<<<<<< Updated upstream
-=======
 # --------------- Activate PF Policy ---------------
 async def activate_pf_policy():
     await publish_message(
@@ -105,7 +112,7 @@ async def activate_pf_policy():
             "date": datetime.now().strftime("%Y-%m-%d"),
         },
     )
-
+    
 # --------------- Employee Transfer Apply (Periodic, on effective_date) ---------------
 async def employee_transfer_apply():
     await publish_message(
@@ -115,7 +122,6 @@ async def employee_transfer_apply():
         },
     )
 
->>>>>>> Stashed changes
 # --------------- Absent Bridge Merge ---------------
 async def absent_bridge_merge():
     # Runs daily. Process the month of yesterday (last fully processed day);
@@ -229,8 +235,6 @@ async def lifespan(app: FastAPI):
         id='fiscalYearClosing_job', 
         max_instances=1
     )
-<<<<<<< Updated upstream
-=======
     scheduler.add_job(
         activate_pf_policy,
         'cron',
@@ -239,6 +243,7 @@ async def lifespan(app: FastAPI):
         id='activatePfPolicy_job',
         max_instances=1
     )
+
     scheduler.add_job(
         employee_transfer_apply,
         'cron',
@@ -247,7 +252,7 @@ async def lifespan(app: FastAPI):
         id='employeeTransferApply_job',
         max_instances=1
     )
->>>>>>> Stashed changes
+
     # --------------- Absent Bridge Merge ---------------
     scheduler.add_job(
         absent_bridge_merge,
@@ -258,6 +263,15 @@ async def lifespan(app: FastAPI):
         max_instances=1
     )
     
+    scheduler.add_job(
+        legacy_sync,
+        'cron',
+        **parse_cron_config('CRON_LEGACY_SYNC', 'hour=2,minute=0'),
+        misfire_grace_time=30,
+        id='legacySync_job',
+        max_instances=1
+    )
+
     # scheduler.add_job(check_inactive_employees, 'cron', hour=2, minute=0)
     # scheduler.add_job(generate_report, 'cron', minute='*/30')
     # scheduler.add_job(cleanup_logs, 'cron', day_of_week='sun', hour=3, minute=0)
