@@ -95,6 +95,27 @@ async def fiscal_year_closing():
         },
     )
 
+<<<<<<< Updated upstream
+=======
+# --------------- Activate PF Policy ---------------
+async def activate_pf_policy():
+    await publish_message(
+        "activatePfPolicy_trigger_queue",
+        {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+        },
+    )
+
+# --------------- Employee Transfer Apply (Periodic, on effective_date) ---------------
+async def employee_transfer_apply():
+    await publish_message(
+        "employeeTransferApply_trigger_queue",
+        {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+        },
+    )
+
+>>>>>>> Stashed changes
 # --------------- Absent Bridge Merge ---------------
 async def absent_bridge_merge():
     # Runs daily. Process the month of yesterday (last fully processed day);
@@ -208,6 +229,25 @@ async def lifespan(app: FastAPI):
         id='fiscalYearClosing_job', 
         max_instances=1
     )
+<<<<<<< Updated upstream
+=======
+    scheduler.add_job(
+        activate_pf_policy,
+        'cron',
+        **parse_cron_config('CRON_ACTIVATE_PF_POLICY', 'hour=0,minute=0,second=0'),
+        misfire_grace_time=30,
+        id='activatePfPolicy_job',
+        max_instances=1
+    )
+    scheduler.add_job(
+        employee_transfer_apply,
+        'cron',
+        **parse_cron_config('CRON_EMPLOYEE_TRANSFER_APPLY', 'hour=0,minute=0,second=0'),
+        misfire_grace_time=30,
+        id='employeeTransferApply_job',
+        max_instances=1
+    )
+>>>>>>> Stashed changes
     # --------------- Absent Bridge Merge ---------------
     scheduler.add_job(
         absent_bridge_merge,
