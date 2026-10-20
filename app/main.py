@@ -112,6 +112,15 @@ async def activate_pf_policy():
             "date": datetime.now().strftime("%Y-%m-%d"),
         },
     )
+    
+# --------------- Employee Transfer Apply (Periodic, on effective_date) ---------------
+async def employee_transfer_apply():
+    await publish_message(
+        "employeeTransferApply_trigger_queue",
+        {
+            "date": datetime.now().strftime("%Y-%m-%d"),
+        },
+    )
 
 # --------------- Absent Bridge Merge ---------------
 async def absent_bridge_merge():
@@ -234,6 +243,16 @@ async def lifespan(app: FastAPI):
         id='activatePfPolicy_job',
         max_instances=1
     )
+
+    scheduler.add_job(
+        employee_transfer_apply,
+        'cron',
+        **parse_cron_config('CRON_EMPLOYEE_TRANSFER_APPLY', 'hour=0,minute=0,second=0'),
+        misfire_grace_time=30,
+        id='employeeTransferApply_job',
+        max_instances=1
+    )
+
     # --------------- Absent Bridge Merge ---------------
     scheduler.add_job(
         absent_bridge_merge,
