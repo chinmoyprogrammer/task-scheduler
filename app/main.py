@@ -252,10 +252,7 @@ async def lifespan(app: FastAPI):
         id='employeeTransferApply_job',
         max_instances=1
     )
-<<<<<<< HEAD
 
-=======
->>>>>>> b6eeb69 (merge)
     # --------------- Absent Bridge Merge ---------------
     scheduler.add_job(
         absent_bridge_merge,
