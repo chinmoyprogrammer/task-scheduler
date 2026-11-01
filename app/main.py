@@ -2,7 +2,10 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime
+import asyncio
+import json
 import os
+import urllib.request
 from dotenv import load_dotenv
 
 from app.rabbitmq_pub import publish_message
@@ -179,6 +182,74 @@ async def ensure_cache_indexes():
     return missing
 
 
+# ---------- Job tracking (hr-bg-service/docs/job-failure-tracking-plan.html) ----------
+# job_runs.job in hr-bg is the trigger queue's base name; most job ids are that name + '_job'
+JOB_QUEUE = {'absentBridgeMerge_job': 'processSandwichedHolidays'}
+DOW = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']  # APScheduler numbers days from Monday, cron from Sunday
+
+
+def cron_expr(trigger) -> str:
+    """APScheduler CronTrigger -> 5-field cron for hr-bg's watchdog (seconds and year are dropped)."""
+    f = {field.name: str(field) for field in trigger.fields}
+    # ponytail: numeric day_of_week becomes names; a wrap-around range like 'sat-mon' is not handled
+    dow = ''.join(DOW[int(c)] if c.isdigit() else c for c in f['day_of_week'])
+    return f"{f['minute']} {f['hour']} {f['day']} {f['month']} {dow}"
+
+
+async def publish_registry():
+    """Tells hr-bg every cron job, so its watchdog can spot runs that never happened."""
+    jobs = [
+        {
+            'id': job.id,
+            'job': JOB_QUEUE.get(job.id, job.id.removesuffix('_job')),
+            'cron': cron_expr(job.trigger),
+            'timezone': str(job.trigger.timezone),
+            'next_run_time': job.next_run_time.isoformat() if job.next_run_time else None,
+        }
+        for job in scheduler.get_jobs() if job.id != 'crossWatch_job'
+    ]
+    try:
+        await publish_message('schedulerRegistry_trigger_queue', {'jobs': jobs})
+    except Exception as e:
+        print(f"[registry] publish failed: {e}")
+
+
+HR_BG_HEALTH_URL = os.getenv('HR_BG_HEALTH_URL', 'http://hr-bg-service/api/jobs/health')
+WATCHDOG_STALE_S = 180
+cross_watch_failures = 0
+cross_watch_alerting = False
+
+
+def _fetch_health() -> dict:
+    req = urllib.request.Request(HR_BG_HEALTH_URL, headers={'X-Caller': 'task-scheduler'})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read())
+
+
+async def cross_watch():
+    """hr-bg watches the scheduler; this watches hr-bg's watchdog back."""
+    global cross_watch_failures, cross_watch_alerting
+    try:
+        age = (await asyncio.to_thread(_fetch_health)).get('heartbeats', {}).get('watchdog')
+        if age is None:
+            problem = "hr-bg reports no watchdog heartbeat at all"
+        else:
+            problem = None if age < WATCHDOG_STALE_S else f"hr-bg watchdog heartbeat is {age}s old"
+    except Exception as e:
+        problem = f"hr-bg-service not answering {HR_BG_HEALTH_URL}: {e}"
+
+    cross_watch_failures = cross_watch_failures + 1 if problem else 0
+    if problem:
+        print(f"[cross-watch] check failed ({cross_watch_failures}x): {problem}")
+    # Two misses in a row, so a container restart doesn't raise it
+    if problem and cross_watch_failures >= 2 and not cross_watch_alerting:
+        cross_watch_alerting = True
+        print(f"[cross-watch] ALERT {problem}")  # Phase 3: also post to the alert webhook
+    elif not problem and cross_watch_alerting:
+        cross_watch_alerting = False
+        print("[cross-watch] RESOLVED hr-bg-service and its watchdog are healthy again")
+
+
 # ---------- Scheduler lifecycle ----------
 scheduler = AsyncIOScheduler()
 
@@ -277,9 +348,12 @@ async def lifespan(app: FastAPI):
     # scheduler.add_job(cleanup_logs, 'cron', day_of_week='sun', hour=3, minute=0)
     # scheduler.add_job(test_publish, 'interval', seconds=30, id='test_rabbitmq_job')
 
+    scheduler.add_job(cross_watch, 'interval', seconds=60, id='crossWatch_job', max_instances=1)
+
     await ensure_cache_indexes()
 
     scheduler.start()
+    await publish_registry()
     print("✅ Scheduler started (including test job).")
     yield
     scheduler.shutdown()
