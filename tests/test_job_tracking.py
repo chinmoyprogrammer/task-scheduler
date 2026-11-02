@@ -73,6 +73,7 @@ class CrossWatchTest(unittest.TestCase):
     def setUp(self):
         m.cross_watch_failures = 0
         m.cross_watch_alerting = False
+        m.cross_watch_alerted_at = 0.0
 
     def tick(self, health=None, error=None) -> str:
         fetch = mock.Mock(side_effect=error) if error else mock.Mock(return_value=health)
@@ -101,6 +102,38 @@ class CrossWatchTest(unittest.TestCase):
         self.setUp()
         self.tick({'heartbeats': {}})
         self.assertIn('ALERT hr-bg reports no watchdog heartbeat at all', self.tick({'heartbeats': {}}))
+
+    def test_posts_alert_hourly_reminder_and_resolved_to_webhook(self):
+        post = mock.Mock()
+        with mock.patch.object(m, 'JOB_ALERT_WEBHOOK_URL', 'http://hooks.test/x'), mock.patch.object(m, '_post_webhook', post):
+            self.tick(error=OSError('refused'))
+            self.tick(error=OSError('refused'))
+            self.tick(error=OSError('refused'))           # within the hour: no reminder
+            m.cross_watch_alerted_at -= 3601
+            self.assertIn('STILL DOWN', self.tick(error=OSError('refused')))
+            self.tick({'heartbeats': {'watchdog': 5}})
+
+        texts = [c.args[0] for c in post.call_args_list]
+        self.assertEqual(len(texts), 3)
+        self.assertTrue(texts[0].startswith(':red_circle: *hr-bg-service down*'))
+        self.assertIn('refused', texts[0])
+        self.assertTrue(texts[1].startswith(':red_circle: *still down* hr-bg-service (4 failed checks)'))
+        self.assertTrue(texts[2].startswith(':large_green_circle: *resolved*'))
+
+    def test_webhook_failure_is_logged_not_raised(self):
+        post = mock.Mock(side_effect=OSError('webhook down'))
+        with mock.patch.object(m, 'JOB_ALERT_WEBHOOK_URL', 'http://hooks.test/x'), mock.patch.object(m, '_post_webhook', post):
+            self.tick(error=OSError('refused'))
+            out = self.tick(error=OSError('refused'))
+        self.assertIn('ALERT', out)
+        self.assertIn('[cross-watch] webhook failed: webhook down', out)
+
+    def test_no_webhook_configured_posts_nothing(self):
+        post = mock.Mock()
+        with mock.patch.object(m, 'JOB_ALERT_WEBHOOK_URL', ''), mock.patch.object(m, '_post_webhook', post):
+            self.tick(error=OSError('refused'))
+            self.assertIn('ALERT', self.tick(error=OSError('refused')))
+        post.assert_not_called()
 
     def test_one_miss_between_successes_never_alerts(self):
         healthy = {'heartbeats': {'watchdog': 30}}

@@ -5,6 +5,7 @@ from datetime import datetime
 import asyncio
 import json
 import os
+import time
 import urllib.request
 from dotenv import load_dotenv
 
@@ -215,9 +216,13 @@ async def publish_registry():
 
 
 HR_BG_HEALTH_URL = os.getenv('HR_BG_HEALTH_URL', 'http://hr-bg-service/api/jobs/health')
+# Same Slack-compatible webhook as hr-bg's job alerts (app/Support/Alert.php); unset = log only
+JOB_ALERT_WEBHOOK_URL = os.getenv('JOB_ALERT_WEBHOOK_URL', '')
 WATCHDOG_STALE_S = 180
+REMIND_EVERY_S = 3600
 cross_watch_failures = 0
 cross_watch_alerting = False
+cross_watch_alerted_at = 0.0
 
 
 def _fetch_health() -> dict:
@@ -226,9 +231,28 @@ def _fetch_health() -> dict:
         return json.loads(r.read())
 
 
+def _post_webhook(text: str) -> None:
+    req = urllib.request.Request(
+        JOB_ALERT_WEBHOOK_URL,
+        data=json.dumps({'text': text}).encode(),
+        headers={'Content-Type': 'application/json'},
+    )
+    urllib.request.urlopen(req, timeout=10).close()
+
+
+async def send_alert(text: str) -> None:
+    """hr-bg can't send this one: it's the thing that's down."""
+    if not JOB_ALERT_WEBHOOK_URL:
+        return
+    try:
+        await asyncio.to_thread(_post_webhook, text)
+    except Exception as e:
+        print(f"[cross-watch] webhook failed: {e}")
+
+
 async def cross_watch():
     """hr-bg watches the scheduler; this watches hr-bg's watchdog back."""
-    global cross_watch_failures, cross_watch_alerting
+    global cross_watch_failures, cross_watch_alerting, cross_watch_alerted_at
     try:
         age = (await asyncio.to_thread(_fetch_health)).get('heartbeats', {}).get('watchdog')
         if age is None:
@@ -244,10 +268,17 @@ async def cross_watch():
     # Two misses in a row, so a container restart doesn't raise it
     if problem and cross_watch_failures >= 2 and not cross_watch_alerting:
         cross_watch_alerting = True
-        print(f"[cross-watch] ALERT {problem}")  # Phase 3: also post to the alert webhook
+        cross_watch_alerted_at = time.time()
+        print(f"[cross-watch] ALERT {problem}")
+        await send_alert(f":red_circle: *hr-bg-service down* (seen by task-scheduler)\n{problem}\nJobs may not be running or tracked.")
+    elif problem and cross_watch_alerting and time.time() - cross_watch_alerted_at >= REMIND_EVERY_S:
+        cross_watch_alerted_at = time.time()
+        print(f"[cross-watch] STILL DOWN {problem}")
+        await send_alert(f":red_circle: *still down* hr-bg-service ({cross_watch_failures} failed checks)\n{problem}")
     elif not problem and cross_watch_alerting:
         cross_watch_alerting = False
         print("[cross-watch] RESOLVED hr-bg-service and its watchdog are healthy again")
+        await send_alert(":large_green_circle: *resolved* hr-bg-service and its watchdog are healthy again")
 
 
 # ---------- Scheduler lifecycle ----------
