@@ -1,7 +1,7 @@
 import aio_pika
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Environment variables from docker-compose
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
@@ -32,6 +32,9 @@ async def publish_message(routing_key: str, payload: dict):
             body=json.dumps(payload).encode(),
             content_type="application/json",
             delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+            # hr-bg job tracking: when it was due, even if consumed late. Aware, or aio_pika reads local time as UTC
+            timestamp=datetime.now(timezone.utc),
+
         )
 
         await channel.default_exchange.publish(message, routing_key=routing_key, mandatory=True)
